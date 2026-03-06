@@ -151,7 +151,7 @@ sudo chezmoi init --apply <GIT_URL>
 gitpkg install hardened_malloc
 
 # Install atomic-upgrade
-yay -S atomic-upgrade
+gitpkg install atomic-upgrade
 
 # Enable zram
 sudo systemctl start systemd-zram-setup@zram0.service
@@ -171,7 +171,7 @@ sudo systemctl enable --now btrbk.timer
 ### Optional
 
 - [hardened\_malloc](https://gitlab.com/fkzys/hardened_malloc) — hardened memory allocator (via [gitpkg](https://gitlab.com/fkzys/gitpkg))
-- [atomic-upgrade](https://gitlab.com/fkzys/atomic-upgrade) — atomic system upgrades ([GitLab](https://gitlab.com/fkzys/atomic-upgrade) via [gitpkg](https://gitlab.com/fkzys/gitpkg) |[AUR](https://aur.archlinux.org/packages/atomic-upgrade))
+- [atomic-upgrade](https://gitlab.com/fkzys/atomic-upgrade) — atomic system upgrades (via [gitpkg](https://gitlab.com/fkzys/gitpkg) or [AUR](https://aur.archlinux.org/packages/atomic-upgrade))
 - `btrbk` — automated Btrfs snapshots
 - `podman` — containers (btrfs storage driver)
 - `firewalld` — firewall with per-user blocking and trusted zones
