@@ -5,4 +5,11 @@ ESP="/efi"
 KEEP_GENERATIONS=3
 MAPPER_NAME="root_crypt"
 KERNEL_PARAMS="{{ if .tpm2_unlock }}rd.luks.options=tpm2-device=auto {{ end }}rw slab_nomerge init_on_alloc=1 page_alloc.shuffle=1 pti=on vsyscall=none randomize_kstack_offset=on debugfs=off"
+
+# Sign UKI files with sbctl for Secure Boot (requires sbctl)
 SBCTL_SIGN=1
+
+# Upgrade guard: block direct pacman -Syu, suggest atomic-upgrade
+# Controls both the pacman hook and the /usr/local/bin/pacman wrapper
+# Set to 0 to disable (takes effect immediately, no restart needed)
+#UPGRADE_GUARD=1
