@@ -14,6 +14,53 @@ System-level configuration files (`/etc`, `/efi`) managed with
 - **Hardening**: kernel sysctl, faillock, coredump off, USB lock, pam, [hardened\_malloc](https://gitlab.com/fkzys/hardened-malloc)
 - **Nextcloud blocking**: pacman hook prevents Nextcloud installation
   for user\_c (controlled by `block_nextcloud_user_c` flag)
+- **Declarative permissions**: custom permission system replacing `.chezmoiattributes` — glob-based rules for mode/owner/group with full test coverage
+
+## Permissions
+
+chezmoi's built-in `.chezmoiattributes` is replaced by a custom system:
+
+- **`chezmoiperms`** — declarative rules file (glob pattern + mode + owner + group per line)
+- **`scripts/apply_perms.py`** — parser and applicator (pure-function pipeline, no chezmoi subprocess dependency)
+- **`Makefile`** — `make perms` target that pipes `chezmoi managed` into `apply_perms.py`
+
+### Rule format
+
+```
+<glob-pattern>   <mode|->  <owner|->  <group|->
+```
+
+- Pattern ending with `/` matches directories only; without — files only
+- `**` matches zero or more path segments, `*` matches within a single segment
+- `-` means "don't change this attribute"
+- Last matching rule wins
+
+### Current rules
+
+```
+etc/**                   0644  root  root
+etc/**/                  0755  root  root
+etc/security/**          0600  root  root
+etc/pacman.conf          0644  root  root
+etc/polkit-1/rules.d/**  0750  root  polkitd
+efi/**                   0755  root  root
+root/**                  0600  root  root
+root/**/                 0700  root  root
+```
+
+### Usage
+
+```bash
+# Apply permissions to all chezmoi-managed paths
+sudo make perms
+
+# Dry run (print what would change)
+make dry-run
+```
+
+### Tests
+
+See [tests/README.md](tests/README.md) for test documentation. Tests cover parsing, glob matching, action computation, and filesystem integration (chmod/chown). CI runs lint (`ruff`, `mypy --strict`) and tests as root on every push/PR.
 
 ## hardened\_malloc
 
@@ -58,30 +105,68 @@ Subnet values are stored encrypted in `secrets.enc.yaml` (`firewall.subnet1`, `f
 
 ```
 .
-├── efi/loader/              # systemd-boot config
+├── Makefile                          # make perms — apply permissions
+├── chezmoiperms                      # Declarative permission rules
+├── secrets.enc.yaml                  # SOPS-encrypted secrets (age)
+├── scripts/
+│   └── apply_perms.py                # Permission parser and applicator
+├── tests/
+│   ├── README.md                     # Test documentation
+│   └── test_apply_perms.py           # pytest suite (unit + integration)
+├── efi/
+│   └── loader/
+│       └── executable_loader.conf    # systemd-boot config
 ├── etc/
-│   ├── atomic.conf.tmpl     # atomic-upgrade config override (per-host kernel params)
-│   ├── btrbk/               # Btrfs snapshot policy
-│   ├── containers/          # Podman (btrfs driver, per-host graphroot)
+│   ├── atomic.conf.tmpl              # atomic-upgrade config override
+│   ├── btrbk/
+│   │   ├── btrbk.conf.example        # Snapshot policy example
+│   │   └── btrbk.conf.tmpl           # Snapshot policy (per-host)
+│   ├── containers/
+│   │   └── storage.conf.tmpl         # Podman (btrfs driver, per-host graphroot)
 │   ├── firewalld/
-│   │   ├── direct.xml.tmpl        # Per-user outbound block (iptables owner match)
+│   │   ├── direct.xml.tmpl           # Per-user outbound block (iptables owner match)
 │   │   └── zones/
-│   │       └── trusted.xml.tmpl   # Trusted zone (VPN, subnets)
-│   ├── mkinitcpio.conf            # Initramfs base config
-│   ├── mkinitcpio.conf.d/         # Drop-in (per-host nvidia modules)
-│   ├── mkinitcpio.d/              # Preset (linux.preset)
-│   ├── modules-load.d/            # Kernel modules to load at boot
+│   │       └── trusted.xml.tmpl      # Trusted zone (VPN, subnets)
+│   ├── mkinitcpio.conf               # Initramfs base config
+│   ├── mkinitcpio.conf.d/
+│   │   └── 10-default.conf.tmpl      # Drop-in (per-host nvidia modules)
+│   ├── mkinitcpio.d/
+│   │   └── linux.preset              # Preset
+│   ├── modprobe.d/
+│   │   └── 10-nvidia.conf            # NVIDIA kernel module options
+│   ├── modules-load.d/
+│   │   └── modules.conf              # Kernel modules to load at boot
+│   ├── pacman.conf                   # Pacman configuration
 │   ├── pacman.d/
-│   │   └── hooks/                 # Pacman hooks (Nextcloud blocking)
-│   ├── modprobe.d/          # Kernel modules (nvidia)
-│   ├── pam.d/               # PAM (gnome-keyring auto-unlock)
-│   ├── polkit-1/            # Polkit rules (sing-box DNS)
-│   ├── security/            # faillock
-│   ├── sysctl.d/            # Kernel parameters
-│   ├── systemd/             # networkd, journald, coredump, zram
-│   └── tmpfiles.d/          # Battery, USB lock
-└── root/
-    └── dot_zshrc            # Root shell config
+│   │   └── hooks/
+│   │       └── block-nextcloud-user_c.hook  # Nextcloud blocking hook
+│   ├── pam.d/
+│   │   └── login                     # PAM (gnome-keyring auto-unlock)
+│   ├── polkit-1/
+│   │   └── rules.d/
+│   │       └── 99-sing-box.rules.tmpl  # Polkit rules (sing-box DNS)
+│   ├── security/
+│   │   └── faillock.conf             # Account lockout policy
+│   ├── sysctl.d/
+│   │   └── 10-default.conf           # Kernel parameters
+│   ├── systemd/
+│   │   ├── coredump.conf             # Coredump disabled
+│   │   ├── journald.conf             # Journal settings
+│   │   ├── network/
+│   │   │   ├── 10-wire.network       # Wired network
+│   │   │   └── 11-wifi.network       # WiFi network
+│   │   └── zram-generator.conf       # Zram swap
+│   └── tmpfiles.d/
+│       ├── battery.conf              # Battery charge thresholds
+│       └── usb-lock.conf             # USB authorization lock
+├── root/
+│   └── dot_zshrc                     # Root shell config
+├── usr/
+│   └── local/
+│       └── bin/                      # Custom scripts
+└── .github/
+    └── workflows/
+        └── ci.yml                    # Lint + test pipeline
 ```
 
 ## Per-host configuration
