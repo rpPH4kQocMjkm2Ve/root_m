@@ -1,5 +1,8 @@
 # root-chezmoi — Arch Linux system configuration
 
+[![CI](https://github.com/rpPH4kQocMjkm2Ve/root-chezmoi/actions/workflows/ci.yml/badge.svg)](https://github.com/rpPH4kQocMjkm2Ve/root-chezmoi/actions/workflows/ci.yml)
+![License](https://img.shields.io/github/license/rpPH4kQocMjkm2Ve/root-chezmoi)
+
 System-level configuration files (`/etc`, `/efi`) managed with
 [chezmoi](https://www.chezmoi.io/) using `destDir = "/"`.
 
