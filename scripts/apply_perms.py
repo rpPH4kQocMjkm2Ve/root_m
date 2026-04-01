@@ -21,6 +21,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from collections.abc import Callable
 
 
 @dataclass(frozen=True, slots=True)
@@ -183,7 +184,7 @@ def compute_actions(
     managed_paths: list[str],
     dest_dir: str,
     *,
-    is_dir_func: callable = os.path.isdir,
+    is_dir_func: Callable[[str], bool] = os.path.isdir,
 ) -> list[PermAction]:
     """Compute permission actions for *managed_paths*.
 
@@ -321,8 +322,8 @@ def main() -> int:
 
     try:
         rules = parse_rules(perms_path.read_text())
-    except ParseError as e:
-        print(f"ERROR: {perms_path}: {e}", file=sys.stderr)
+    except ParseError as exc:
+        print(f"ERROR: {perms_path}: {exc}", file=sys.stderr)
         return 1
 
     if not rules:
@@ -341,8 +342,8 @@ def main() -> int:
         return 0
 
     ok, errors = apply_actions(actions, dry_run=args.dry_run)
-    for e in errors:
-        print(f"ERROR: {e}", file=sys.stderr)
+    for err_msg in errors:
+        print(f"ERROR: {err_msg}", file=sys.stderr)
 
     return 0 if ok else 1
 
