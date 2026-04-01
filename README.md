@@ -1,10 +1,9 @@
-# root-chezmoi — Arch Linux system configuration
+# root_m — Arch Linux system configuration
 
-[![CI](https://github.com/rpPH4kQocMjkm2Ve/root-chezmoi/actions/workflows/ci.yml/badge.svg)](https://github.com/rpPH4kQocMjkm2Ve/root-chezmoi/actions/workflows/ci.yml)
-![License](https://img.shields.io/github/license/rpPH4kQocMjkm2Ve/root-chezmoi)
+![License](https://img.shields.io/github/license/rpPH4kQocMjkm2Ve/root_m)
 
-System-level configuration files (`/etc`, `/efi`) managed with
-[chezmoi](https://www.chezmoi.io/) using `destDir = "/"`.
+System-level configuration files (`/etc`, `/efi`, `/root`) managed with
+[dotm](https://gitlab.com/fkzys/dotm) using `dest = "/"`.
 
 ## What's included
 
@@ -15,55 +14,25 @@ System-level configuration files (`/etc`, `/efi`) managed with
 - **Firewall**: firewalld with per-user network blocking and trusted zone templating
 - **Containers**: Podman with btrfs storage driver
 - **Hardening**: kernel sysctl, faillock, coredump off, USB lock, pam, [hardened\_malloc](https://gitlab.com/fkzys/hardened-malloc)
-- **Nextcloud blocking**: pacman hook prevents Nextcloud installation
-  for user\_c (controlled by `block_nextcloud_user_c` flag)
-- **Declarative permissions**: custom permission system replacing `.chezmoiattributes` — glob-based rules for mode/owner/group with full test coverage
+- **Nextcloud blocking**: pacman hook prevents Nextcloud installation for user\_c (controlled by `block_nextcloud_user_c` prompt)
 
 ## Permissions
 
-chezmoi's built-in `.chezmoiattributes` is replaced by a custom system:
-
-- **`chezmoiperms`** — declarative rules file (glob pattern + mode + owner + group per line)
-- **`scripts/apply_perms.py`** — parser and applicator (pure-function pipeline, no chezmoi subprocess dependency)
-- **`Makefile`** — `make perms` target that pipes `chezmoi managed` into `apply_perms.py`
-
-### Rule format
+dotm's `perms` file sets mode, owner, and group on deployed files. Glob patterns, last match wins.
 
 ```
-<glob-pattern>   <mode|->  <owner|->  <group|->
+efi/**/                          0755  root   root
+efi/**                           0755  root   root
+
+etc/**/                          0755  root   root
+etc/**                           0644  root   root
+etc/polkit-1/rules.d/**          0750  root   polkitd
+
+root/**/                         0700  root   root
+root/**                          0600  root   root
 ```
 
-- Pattern ending with `/` matches directories only; without — files only
-- `**` matches zero or more path segments, `*` matches within a single segment
-- `-` means "don't change this attribute"
-- Last matching rule wins
-
-### Current rules
-
-```
-etc/**                   0644  root  root
-etc/**/                  0755  root  root
-etc/security/**          0600  root  root
-etc/pacman.conf          0644  root  root
-etc/polkit-1/rules.d/**  0750  root  polkitd
-efi/**                   0755  root  root
-root/**                  0600  root  root
-root/**/                 0700  root  root
-```
-
-### Usage
-
-```bash
-# Apply permissions to all chezmoi-managed paths
-sudo make perms
-
-# Dry run (print what would change)
-make dry-run
-```
-
-### Tests
-
-See [tests/README.md](tests/README.md) for test documentation. Tests cover parsing, glob matching, action computation, and filesystem integration (chmod/chown). CI runs lint (`ruff`, `mypy --strict`) and tests as root on every push/PR.
+Pattern ending with `/` matches directories only; without — files only. `**` matches zero or more path segments. `-` means "don't change this attribute".
 
 ## hardened\_malloc
 
@@ -79,7 +48,7 @@ See [hardened\_malloc](https://gitlab.com/fkzys/hardened_malloc) for details on 
 
 The [atomic-upgrade](https://gitlab.com/fkzys/atomic-upgrade) package is installed separately. This repo provides:
 
-- **`/etc/atomic.conf`** — per-host kernel parameters (TPM2 auto-unlock, etc.) via chezmoi template
+- **`/etc/atomic.conf`** — per-host kernel parameters (TPM2 auto-unlock, etc.) via dotm template
 
 ## Firewall
 
@@ -108,73 +77,64 @@ Subnet values are stored encrypted in `secrets.enc.yaml` (`firewall.subnet1`, `f
 
 ```
 .
-├── Makefile                          # make perms — apply permissions
-├── chezmoiperms                      # Declarative permission rules
+├── dotm.toml                         # dotm config (dest, prompts)
+├── perms                             # Permission rules (glob → mode/owner/group)
+├── ignore.tmpl                       # Conditional ignore patterns
 ├── secrets.enc.yaml                  # SOPS-encrypted secrets (age)
-├── scripts/
-│   └── apply_perms.py                # Permission parser and applicator
-├── tests/
-│   ├── README.md                     # Test documentation
-│   └── test_apply_perms.py           # pytest suite (unit + integration)
-├── efi/
-│   └── loader/
-│       └── executable_loader.conf    # systemd-boot config
-├── etc/
-│   ├── atomic.conf.tmpl              # atomic-upgrade config override
-│   ├── btrbk/
-│   │   ├── btrbk.conf.example        # Snapshot policy example
-│   │   └── btrbk.conf.tmpl           # Snapshot policy (per-host)
-│   ├── containers/
-│   │   └── storage.conf.tmpl         # Podman (btrfs driver, per-host graphroot)
-│   ├── firewalld/
-│   │   ├── direct.xml.tmpl           # Per-user outbound block (iptables owner match)
-│   │   └── zones/
-│   │       └── trusted.xml.tmpl      # Trusted zone (VPN, subnets)
-│   ├── mkinitcpio.conf               # Initramfs base config
-│   ├── mkinitcpio.conf.d/
-│   │   └── 10-default.conf.tmpl      # Drop-in (per-host nvidia modules)
-│   ├── mkinitcpio.d/
-│   │   └── linux.preset              # Preset
-│   ├── modprobe.d/
-│   │   └── 10-nvidia.conf            # NVIDIA kernel module options
-│   ├── modules-load.d/
-│   │   └── modules.conf              # Kernel modules to load at boot
-│   ├── pacman.conf                   # Pacman configuration
-│   ├── pacman.d/
-│   │   └── hooks/
-│   │       └── block-nextcloud-user_c.hook  # Nextcloud blocking hook
-│   ├── pam.d/
-│   │   └── login                     # PAM (gnome-keyring auto-unlock)
-│   ├── polkit-1/
-│   │   └── rules.d/
-│   │       └── 99-sing-box.rules.tmpl  # Polkit rules (sing-box DNS)
-│   ├── security/
-│   │   └── faillock.conf             # Account lockout policy
-│   ├── sysctl.d/
-│   │   └── 10-default.conf           # Kernel parameters
-│   ├── systemd/
-│   │   ├── coredump.conf             # Coredump disabled
-│   │   ├── journald.conf             # Journal settings
-│   │   ├── network/
-│   │   │   ├── 10-wire.network       # Wired network
-│   │   │   └── 11-wifi.network       # WiFi network
-│   │   └── zram-generator.conf       # Zram swap
-│   └── tmpfiles.d/
-│       ├── battery.conf              # Battery charge thresholds
-│       └── usb-lock.conf             # USB authorization lock
-├── root/
-│   └── dot_zshrc                     # Root shell config
-├── usr/
-│   └── local/
-│       └── bin/                      # Custom scripts
-└── .github/
-    └── workflows/
-        └── ci.yml                    # Lint + test pipeline
+├── .sops.yaml                        # SOPS recipients config
+└── files/
+    ├── efi/
+    │   └── loader/
+    │       └── loader.conf           # systemd-boot config
+    ├── etc/
+    │   ├── atomic.conf.tmpl          # atomic-upgrade config override
+    │   ├── btrbk/
+    │   │   └── btrbk.conf.tmpl       # Snapshot policy (per-host targets)
+    │   ├── containers/
+    │   │   └── storage.conf.tmpl     # Podman (btrfs driver, per-host graphroot)
+    │   ├── firewalld/
+    │   │   ├── direct.xml.tmpl       # Per-user outbound block (iptables owner match)
+    │   │   └── zones/
+    │   │       └── trusted.xml.tmpl  # Trusted zone (VPN, subnets)
+    │   ├── mkinitcpio.conf           # Initramfs base config
+    │   ├── mkinitcpio.conf.d/
+    │   │   └── 10-default.conf.tmpl  # Drop-in (per-host nvidia modules)
+    │   ├── mkinitcpio.d/
+    │   │   └── linux.preset          # Preset
+    │   ├── modprobe.d/
+    │   │   └── 10-nvidia.conf        # NVIDIA kernel module options
+    │   ├── modules-load.d/
+    │   │   └── modules.conf          # Kernel modules to load at boot
+    │   ├── pacman.conf               # Pacman configuration
+    │   ├── pacman.d/
+    │   │   └── hooks/
+    │   │       └── block-nextcloud-user_c.hook
+    │   ├── pam.d/
+    │   │   └── login                 # PAM (gnome-keyring auto-unlock)
+    │   ├── polkit-1/
+    │   │   └── rules.d/
+    │   │       └── 99-sing-box.rules.tmpl
+    │   ├── security/
+    │   │   └── faillock.conf         # Account lockout policy
+    │   ├── sysctl.d/
+    │   │   └── 10-default.conf       # Kernel parameters
+    │   ├── systemd/
+    │   │   ├── coredump.conf         # Coredump disabled
+    │   │   ├── journald.conf         # Journal settings
+    │   │   ├── network/
+    │   │   │   ├── 10-wire.network   # Wired network
+    │   │   │   └── 11-wifi.network   # WiFi network
+    │   │   └── zram-generator.conf   # Zram swap
+    │   └── tmpfiles.d/
+    │       ├── battery.conf          # Battery charge thresholds
+    │       └── usb-lock.conf         # USB authorization lock
+    └── root/
+        └── .zshrc                    # Root shell config
 ```
 
 ## Per-host configuration
 
-Feature flags are set via `chezmoi init` prompts and stored in `/root/.config/chezmoi/chezmoi.toml`:
+Feature flags are set via `dotm init` prompts and cached in `~/.local/state/dotm/`:
 
 | Variable | Description |
 |---|---|
@@ -209,27 +169,29 @@ users:
 Templates access secrets via:
 
 ```
-{{ $s := output "sops" "-d" (joinPath .chezmoi.sourceDir "secrets.enc.yaml") | fromYaml -}}
+{{ $s := output "sops" "-d" (joinPath .sourceDir "secrets.enc.yaml") | fromYaml -}}
 {{ index $s "polkit" "username" }}
 ```
 
 ### Setup on a new machine
 
-1. Create age key:
+1. Generate age key:
 ```bash
-sudo mkdir -p /root/.config/chezmoi
-sudo age-keygen -o /root/.config/chezmoi/key.txt
+age-keygen -o /root/age.key
+export SOPS_AGE_KEY_FILE=/root/age.key
 ```
 
 2. Add public key to `.sops.yaml` and re-encrypt:
 ```bash
-# Edit .sops.yaml, add new recipient
 sops updatekeys secrets.enc.yaml
 ```
 
-3. Apply:
+3. Clone and apply:
 ```bash
-sudo chezmoi init --apply <GIT_URL>
+git clone <GIT_URL> /root/root_m
+cd /root/root_m
+dotm init
+dotm apply
 ```
 
 ## Post-install
@@ -253,7 +215,7 @@ sudo systemctl enable --now btrbk.timer
 
 ### Required
 
-- `chezmoi` — configuration management
+- [dotm](https://gitlab.com/fkzys/dotm) — dotfiles manager
 - `sops` + `age` — secret encryption
 
 ### Optional
