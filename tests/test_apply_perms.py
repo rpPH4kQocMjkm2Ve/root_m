@@ -770,7 +770,6 @@ class TestApplyActionsDryRun:
         # File unchanged
         assert stat.S_IMODE(f.stat().st_mode) == 0o777
 
-
 # ─── Full pipeline: parse → compute → apply (with real FS) ──────────────────
 
 
@@ -936,3 +935,113 @@ etc/polkit-1/rules.d/**   0640  root  root
         assert stat.S_IMODE(st.st_mode) == 0o640
         assert st.st_uid == user_uid
         assert st.st_gid == group_gid
+
+# ─── PAM safety regression tests ────────────────────────────────────────────
+#
+# Incident 2026-04-01: etc/security/** 0600 → pam_faillock can't read
+# faillock.conf when called from hyprlock (uid=1000) → authentication
+# completely broken.  PAM modules run INSIDE the calling process, not as
+# root.  Config files in /etc/security/ must remain world-readable.
+
+_PAM_READABLE_CONFIGS = [
+    "etc/security/faillock.conf",
+    "etc/security/access.conf",
+    "etc/security/group.conf",
+    "etc/security/limits.conf",
+    "etc/security/namespace.conf",
+    "etc/security/pam_env.conf",
+    "etc/security/time.conf",
+    "etc/security/pwquality.conf",
+]
+
+_OTHERS_READ = 0o004
+
+
+class TestPamSafety:
+    """Regression: restrictive /etc/security/ perms break PAM authentication.
+
+    pam_faillock, pam_unix, etc. are loaded in the context of the calling
+    process.  hyprlock runs as uid=1000, polkit-agent-helper likewise.
+    If faillock.conf is 0600 root:root, the module cannot read it:
+
+        pam_faillock(hyprlock:auth): Configuration file missing or broken
+        unix_chkpwd: password check failed for user
+        polkit-agent-helper-1: pam_authenticate failed:
+            Authentication token manipulation error
+    """
+
+    def test_restrictive_mode_blocks_pam(self):
+        """0600 on /etc/security/* has no others-read bit — PAM breaks."""
+        rules = parse_rules(
+            "etc/**          0644  root  root\n"
+            "etc/security/** 0600  root  root\n"
+        )
+        actions = compute_actions(
+            rules,
+            ["/etc/security/faillock.conf"],
+            "/",
+            is_dir_func=lambda _: False,
+        )
+        assert len(actions) == 1
+        assert actions[0].mode == 0o600
+        assert actions[0].mode & _OTHERS_READ == 0
+
+    def test_world_readable_mode_allows_pam(self):
+        """0644 on /etc/security/* preserves others-read — PAM works."""
+        rules = parse_rules(
+            "etc/**          0644  root  root\n"
+            "etc/security/** 0644  root  root\n"
+        )
+        actions = compute_actions(
+            rules,
+            ["/etc/security/faillock.conf"],
+            "/",
+            is_dir_func=lambda _: False,
+        )
+        assert len(actions) == 1
+        assert actions[0].mode & _OTHERS_READ != 0
+
+    def test_last_match_wins_overrides_safe_default(self):
+        """Earlier 0644 is overridden by later 0600 — last match wins."""
+        rules = parse_rules(
+            "etc/**          0644  root  root\n"
+            "etc/**/         0755  root  root\n"
+            "etc/security/** 0600  root  root\n"
+            "etc/pacman.conf 0644  root  root\n"
+        )
+        actions = compute_actions(
+            rules,
+            ["/etc/security/faillock.conf", "/etc/pacman.conf"],
+            "/",
+            is_dir_func=lambda _: False,
+        )
+        by_path = {a.path: a for a in actions}
+        # pacman.conf is fine — specific rule after glob
+        assert by_path["/etc/pacman.conf"].mode & _OTHERS_READ != 0
+        # faillock.conf is broken — 0600 wins over earlier 0644
+        assert by_path["/etc/security/faillock.conf"].mode & _OTHERS_READ == 0
+
+    @pytest.mark.parametrize("config", _PAM_READABLE_CONFIGS)
+    def test_production_rules_keep_pam_readable(self, config):
+        """Validate actual chezmoiperms doesn't restrict PAM configs."""
+        perms_file = Path(__file__).parent.parent / "chezmoiperms"
+        if not perms_file.exists():
+            pytest.skip("chezmoiperms not found at repo root")
+
+        rules = parse_rules(perms_file.read_text())
+        actions = compute_actions(
+            rules,
+            [f"/{config}"],
+            "/",
+            is_dir_func=lambda _: False,
+        )
+        if not actions:
+            return  # path not managed — no risk
+
+        mode = actions[0].mode
+        assert mode is None or mode & _OTHERS_READ != 0, (
+            f"/{config} gets mode {mode:04o} (not world-readable). "
+            f"PAM modules read this as the calling user (hyprlock uid=1000, "
+            f"polkit-agent, etc). This WILL break authentication. "
+            f"Use 0644 instead of 0600."
+        )
