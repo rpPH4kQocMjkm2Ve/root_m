@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    paths:
+      - 'scripts/apply_perms.py'
+      - 'chezmoiperms'
+      - 'tests/test_apply_perms.py'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    paths:
+      - 'scripts/apply_perms.py'
+      - 'chezmoiperms'
+      - 'tests/test_apply_perms.py'
+      - '.github/workflows/ci.yml'
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+      - run: pip install --no-cache-dir ruff mypy
+      - run: ruff check scripts/apply_perms.py
+      - run: mypy --strict scripts/apply_perms.py
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+      - run: pip install --no-cache-dir pytest
+      - run: sudo python -m pytest tests/test_apply_perms.py -v
