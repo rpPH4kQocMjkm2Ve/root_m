@@ -1,3 +1,0 @@
-etc/** user=root group=root
-usr/** user=root group=root
-root/** user=root group=root
