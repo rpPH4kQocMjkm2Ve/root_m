@@ -4,7 +4,7 @@
 
 | File | Language | Framework | What it tests |
 |------|----------|-----------|---------------|
-| `test_apply_perms.py` | Python | pytest | `apply_perms.py` — rule parsing (`parse_rules`), glob matching (`match_glob`) with `**`/`*`/`?`/literal/escaping, action computation (`compute_actions`) with dir/file filtering, last-match-wins semantics, dest_dir handling, skip markers; filesystem integration (`apply_actions`) for chmod, chown, dry-run, partial failure; full pipeline end-to-end with real directory trees, idempotency verification |
+| `test_apply_perms.py` | Python | pytest | `apply_perms.py` — rule parsing (`parse_rules`), glob matching (`match_glob`) with `**`/`*`/`?`/literal/escaping, action computation (`compute_actions`) with dir/file filtering, last-match-wins semantics, dest_dir handling, skip markers; filesystem integration (`apply_actions`) for chmod, chown, dry-run, partial failure; full pipeline end-to-end with real directory trees, idempotency verification; PAM safety regression tests |
 
 ## Running
 
@@ -21,6 +21,7 @@ python -m pytest tests/test_apply_perms.py -v -k "TestMatchGlob"
 python -m pytest tests/test_apply_perms.py -v -k "TestComputeActions"
 python -m pytest tests/test_apply_perms.py -v -k "TestApplyActionsChmod"
 python -m pytest tests/test_apply_perms.py -v -k "TestFullPipeline"
+python -m pytest tests/test_apply_perms.py -v -k "TestPamSafety"
 ```
 
 ## How they work
@@ -62,9 +63,19 @@ These test classes use the `root_check` fixture, which calls `pytest.skip("requi
 
 **`TestFullPipeline`** — end-to-end tests that build a realistic directory tree (`etc/`, `etc/security/`, `etc/polkit-1/rules.d/`, `etc/systemd/network/`, `efi/loader/`, `root/`) with all permissions set to 0777, parse a multi-section chezmoiperms ruleset, compute actions, apply them, and assert exact permission values for every path: base directories (0755), sensitive directories (0700), regular config files (0644), security files (0600), polkit rules (0640), executables (0755), and root home files (0600). Includes an idempotency test (applying twice produces identical `stat` results) and an ownership pipeline test that chains parse → compute → apply with real `chown` to a non-root user/group.
 
+### PAM safety regression tests (no root required)
+
+**`TestPamSafety`** — regression tests for the 2026-04-01 incident where `etc/security/** 0600` broke PAM authentication system-wide. PAM modules (`pam_faillock`, `pam_unix`, etc.) run inside the calling process — not as root. When `hyprlock` (uid=1000) or `polkit-agent-helper` invokes PAM, the module must be able to read `/etc/security/faillock.conf`. With mode `0600 root:root`, others-read is absent and `pam_authenticate` fails completely.
+
+Tests verify:
+- `0600` removes the others-read bit (reproduces the bug)
+- `0644` preserves the others-read bit (confirms the fix)
+- Last-match-wins semantics can silently override a safe default with an unsafe specific rule
+- **Production guard**: parametrized test reads the actual `chezmoiperms` file from the repo and validates that every known PAM config (`faillock.conf`, `access.conf`, `limits.conf`, `pam_env.conf`, etc.) retains world-readable permissions — catches regressions on any future edit
+
 ## Test environment
 
-- Pure tests (`TestParseRules`, `TestMatchGlob`, `TestComputeActions`) run without root and without filesystem access
+- Pure tests (`TestParseRules`, `TestMatchGlob`, `TestComputeActions`, `TestPamSafety`) run without root and without filesystem access
 - Filesystem tests use pytest's `tmp_path` fixture — no system files are touched
 - Root is required only for `chmod`/`chown` integration tests; non-root runs skip them automatically via `root_check`
 - Non-root user/group discovery is dynamic (`nobody`/`daemon`/`bin`); tests skip gracefully if none are available
