@@ -1,0 +1,11 @@
+# pattern                        mode  owner  group
+
+efi/**/                          0755  root   root
+efi/**                           0755  root   root
+
+etc/**/                          0755  root   root
+etc/**                           0644  root   root
+etc/polkit-1/rules.d/**          0750  root   polkitd
+
+root/**/                         0700  root   root
+root/**                          0600  root   root
