@@ -17,7 +17,6 @@ import grp
 import os
 import pwd
 import re
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -285,19 +284,6 @@ def apply_actions(
 
 # ─── chezmoi helpers (only used by CLI, never by tests) ──────────────────────
 
-
-def _chezmoi_output(*args: str, timeout: int = 30) -> str:
-    result = subprocess.run(
-        ["chezmoi", *args],
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"chezmoi {' '.join(args)} failed: {result.stderr}")
-    return result.stdout.strip()
-
-
 def main() -> int:
     """CLI entry point."""
     import argparse
@@ -309,14 +295,27 @@ def main() -> int:
         action="store_true",
         help="Print actions without applying",
     )
-    parser.add_argument("--perms-file", type=str, default=None)
+    parser.add_argument(
+        "--perms-file",
+        type=str,
+        required=True,
+        help="Path to chezmoiperms file",
+    )
+    parser.add_argument(
+        "--dest-dir",
+        type=str,
+        required=True,
+        help="chezmoi destination directory",
+    )
+    parser.add_argument(
+        "--managed-paths",
+        type=str,
+        required=True,
+        help="File with managed paths (one per line), or - for stdin",
+    )
     args = parser.parse_args()
 
-    if args.perms_file:
-        perms_path = Path(args.perms_file)
-    else:
-        perms_path = Path(_chezmoi_output("source-path")) / "chezmoiperms"
-
+    perms_path = Path(args.perms_file)
     if not perms_path.exists():
         return 0
 
@@ -329,15 +328,21 @@ def main() -> int:
     if not rules:
         return 0
 
-    managed = _chezmoi_output("managed", "--path-style=absolute").splitlines()
-    managed = [p for p in managed if p]
+    if args.managed_paths == "-":
+        raw = sys.stdin.read()
+    else:
+        managed_file = Path(args.managed_paths)
+        if not managed_file.exists():
+            print(f"ERROR: {managed_file} not found", file=sys.stderr)
+            return 1
+        raw = managed_file.read_text()
+
+    managed = [p for p in raw.splitlines() if p]
     if not managed:
-        print("WARNING: no managed paths found", file=sys.stderr)
+        print("WARNING: no managed paths", file=sys.stderr)
         return 0
 
-    dest_dir = _chezmoi_output("target-path")
-
-    actions = compute_actions(rules, managed, dest_dir)
+    actions = compute_actions(rules, managed, args.dest_dir)
     if not actions:
         return 0
 

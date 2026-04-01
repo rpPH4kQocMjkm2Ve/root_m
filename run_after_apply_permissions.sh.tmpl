@@ -1,4 +1,0 @@
-#!/bin/bash
-# hash: {{ include "chezmoiperms" | sha256sum }}
-set -euo pipefail
-python3 "{{ .chezmoi.sourceDir }}/scripts/apply_perms.py"

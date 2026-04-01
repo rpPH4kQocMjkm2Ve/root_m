@@ -1,3 +1,7 @@
+Makefile
+chezmoiperms
+scripts
+tests
 LICENSE
 secrets.enc.yaml
 README.md
