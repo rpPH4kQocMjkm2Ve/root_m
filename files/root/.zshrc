@@ -83,7 +83,7 @@ source /usr/share/zsh/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zs
 # ── Environment ─────────────────────────────────────────────
 export EDITOR=nvim
 export PATH="${HOME}/.local/bin:${PATH}"
-export SOPS_AGE_KEY_FILE="$HOME/.config/chezmoi/key.txt"
+export SOPS_AGE_KEY_FILE="$HOME/keys/age/dotm.txt"
 
 export MAKEFLAGS="-j$(nproc)"
 export CMAKE_BUILD_PARALLEL_LEVEL=$(nproc)
